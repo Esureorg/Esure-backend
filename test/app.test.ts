@@ -86,35 +86,29 @@ describe("Esure API", () => {
   });
 
   it.each([
-    ["truncated JSON", "{"],
-    ["invalid JSON syntax", "{not-json}"],
-  ])("rejects %s as a sanitized scenario parser error", async (_label, payload) => {
+    ["truncated JSON", "/api/v1/scenarios/validate", '{"private-marker":', "INVALID_SCENARIO", "Scenario definition is invalid.", "definition is not valid JSON"],
+    ["invalid JSON", "/api/v1/scenarios/validate", "{private-marker}", "INVALID_SCENARIO", "Scenario definition is invalid.", "definition is not valid JSON"],
+    ["truncated JSON", "/api/v1/runs/definitions", '{"private-marker":', "INVALID_SCENARIO", "Scenario definition is invalid.", "definition is not valid JSON"],
+    ["invalid JSON", "/api/v1/runs/definitions", "{private-marker}", "INVALID_SCENARIO", "Scenario definition is invalid.", "definition is not valid JSON"],
+    ["truncated JSON", "/api/v1/runs", '{"private-marker":', "INVALID_REQUEST", "The request body is invalid.", "request body is not valid JSON"],
+    ["invalid JSON", "/api/v1/runs", "{private-marker}", "INVALID_REQUEST", "The request body is invalid.", "request body is not valid JSON"],
+  ])("rejects %s on %s without exposing parser internals", async (_label, url, payload, code, message, detail) => {
     const response = await createApp().inject({
       method: "POST",
-      url: "/api/v1/scenarios/validate",
+      url,
       headers: { "content-type": "application/json" },
       payload,
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error).toMatchObject({
-      code: "INVALID_SCENARIO",
-      message: "Scenario definition is invalid.",
-      details: ["definition is not valid JSON"],
+      code,
+      message,
+      details: [detail],
     });
+    expect(response.body).not.toContain("private-marker");
     expect(response.body).not.toContain("SyntaxError");
     expect(response.body).not.toContain("FST_ERR_CTP_INVALID_JSON_BODY");
     expect(response.body).not.toContain("Body is not valid JSON");
-  });
-
-  it("rejects truncated JSON on the definition execution endpoint", async () => {
-    const response = await createApp().inject({
-      method: "POST",
-      url: "/api/v1/runs/definitions",
-      headers: { "content-type": "application/json" },
-      payload: "{",
-    });
-    expect(response.statusCode).toBe(400);
-    expect(response.json().error.code).toBe("INVALID_SCENARIO");
   });
 
   it("rejects malformed YAML as a sanitized scenario parser error", async () => {
