@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import type { RunReport } from "../src/domain.js";
+import { completeScenario } from "./fixtures.js";
 
 const live = process.env.RUN_STELLAR_SMOKE === "1";
 
@@ -44,6 +45,25 @@ describe.runIf(live)("real Stellar Testnet smoke", () => {
       expect(downloaded.headers["content-disposition"]).toContain(`esure-run-${report.id}.json`);
     }, 150_000);
   }
+
+  it("executes a completely new inline scenario without source registration", async () => {
+    const definition = { ...completeScenario(), id: "live-inline-complete", name: "Live inline complete" };
+    const started = await app.inject({ method: "POST", url: "/api/v1/runs/definitions", payload: definition });
+    expect(started.statusCode).toBe(202);
+    const report = await waitForRun(started.json().id as string);
+    expect(report.status, JSON.stringify(report, null, 2)).toBe("passed");
+    expect(report.scenarioId).toBe("live-inline-complete");
+    expect(report.scenarioContentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(new Set(report.assertions.map((assertion) => assertion.type))).toEqual(new Set([
+      "balanceEquals", "balanceChangedBy", "stepSucceeded", "stepFailedWith",
+      "trustlineExists", "trustlineMissing", "transactionConfirmed", "accountExists",
+    ]));
+    expect(report.assertions.every((assertion) => assertion.status === "passed")).toBe(true);
+    expect(report.assertions.find((assertion) => assertion.type === "stepFailedWith")).toMatchObject({
+      expected: "tx_failed/op_no_trust",
+      actual: "tx_failed/op_no_trust",
+    });
+  }, 150_000);
 
   async function waitForRun(id: string): Promise<RunReport> {
     const deadline = Date.now() + 140_000;

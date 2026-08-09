@@ -39,6 +39,8 @@ describe("Stellar result-code normalization", () => {
 
     for (const error of [
       horizonError("tx_failed", ["op_underfunded"]),
+      horizonError("tx_failed", ["op_no_trust", "op_success"]),
+      horizonError("tx_failed", []),
       horizonError("tx_bad_seq", []),
       new Error("network timeout"),
     ]) {

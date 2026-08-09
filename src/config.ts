@@ -13,6 +13,7 @@ export interface AppConfig {
   runRateLimitMax: number;
   rateLimitWindowMs: number;
   bodyLimitBytes: number;
+  scenarioDirectory?: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -45,6 +46,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     runRateLimitMax: integerEnv(env, "RUN_RATE_LIMIT_MAX", 10, 1, 1_000),
     rateLimitWindowMs: integerEnv(env, "RATE_LIMIT_WINDOW_MS", 60_000, 1_000, 3_600_000),
     bodyLimitBytes: integerEnv(env, "BODY_LIMIT_BYTES", 16_384, 1_024, 1_048_576),
+    ...(env.SCENARIO_DIRECTORY && { scenarioDirectory: env.SCENARIO_DIRECTORY }),
   };
 }
 

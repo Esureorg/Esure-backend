@@ -1,0 +1,28 @@
+schemaVersion: 1
+id: xlm-payment
+version: 1
+name: XLM payment
+description: Fund two Testnet accounts, send XLM, and verify the recipient balance.
+network: testnet
+accounts:
+  - id: sender
+    generate: true
+    fund: true
+  - id: recipient
+    generate: true
+    fund: true
+assets:
+  - id: xlm
+    type: native
+steps:
+  - id: send-xlm
+    type: payment
+    from: sender
+    to: recipient
+    asset: xlm
+    amount: "5"
+assertions:
+  - type: balanceChangedBy
+    account: recipient
+    asset: xlm
+    amount: "5"

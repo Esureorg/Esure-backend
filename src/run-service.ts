@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { LedgerGateway, RunError, RunReport, RunSummary, Scenario } from "./domain.js";
+import type { LedgerGateway, RunError, RunReport, RunSummary, ValidatedScenario } from "./domain.js";
 import type { RunStore } from "./run-store.js";
 import { RunCapacityError, RunTimeoutError, SafeRunError, withTimeout } from "./errors.js";
 
@@ -19,12 +19,14 @@ export class RunService {
     private readonly options: { maxConcurrentRuns: number; runTimeoutMs: number; stepTimeoutMs: number },
   ) {}
 
-  start(scenario: Scenario): RunReport {
+  start(scenario: ValidatedScenario): RunReport {
     if (this.#activeRuns >= this.options.maxConcurrentRuns) throw new RunCapacityError();
     const run: RunReport = {
       id: randomUUID(),
       scenarioId: scenario.id,
       scenarioVersion: scenario.version,
+      scenarioSchemaVersion: scenario.schemaVersion,
+      scenarioContentHash: scenario.contentHash,
       network: "testnet",
       status: "requested",
       createdAt: new Date().toISOString(),
@@ -42,7 +44,7 @@ export class RunService {
     return this.store.get(id);
   }
 
-  async execute(id: string, scenario: Scenario): Promise<void> {
+  async execute(id: string, scenario: ValidatedScenario): Promise<void> {
     const controller = new AbortController();
     this.store.update(id, { status: "validating" });
     try {
