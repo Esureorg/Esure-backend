@@ -28,6 +28,11 @@ npm run typecheck  # check types without emitting files
 npm run check      # typecheck and test
 ```
 
+The default runner limits each step to 30 seconds, each run to 120 seconds,
+and concurrent execution to two runs. Request rates, in-memory retention, body
+size, and concurrency are configurable through the bounded values documented in
+`.env.example`.
+
 ## Initial endpoints
 
 - `GET /health`
@@ -49,9 +54,27 @@ Run state is currently stored in memory and is lost when the process restarts.
 Generated Testnet secret keys are held only during execution and are never
 included in responses or reports.
 
+Run the opt-in live smoke test only when real Testnet access is intended:
+
+macOS / Linux:
+
+```bash
+RUN_STELLAR_SMOKE=1 npm test -- test/testnet-smoke.test.ts
+```
+
+Windows PowerShell:
+
+```powershell
+$env:RUN_STELLAR_SMOKE="1"
+npm test -- test/testnet-smoke.test.ts
+Remove-Item Env:RUN_STELLAR_SMOKE
+```
+
+The same smoke test runs on a daily GitHub Actions schedule. Normal pull-request
+tests remain deterministic and make no external network calls.
+
 ## Safety
 
 The MVP accepts only bundled scenarios and is locked to Stellar Testnet. It
 does not accept secret keys, arbitrary transaction envelopes, URLs, or code in
 API requests.
-
