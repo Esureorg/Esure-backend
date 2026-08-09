@@ -28,6 +28,8 @@ function run(id: string, status: RunReport["status"], completedAt?: string): Run
     id,
     scenarioId: "xlm-payment",
     scenarioVersion: 1,
+    scenarioSchemaVersion: 1,
+    scenarioContentHash: `sha256:${"a".repeat(64)}`,
     network: "testnet",
     status,
     createdAt: "2026-08-09T00:00:00.000Z",

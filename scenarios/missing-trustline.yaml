@@ -1,0 +1,33 @@
+schemaVersion: 1
+id: missing-trustline
+version: 1
+name: Missing trustline
+description: Verify that an asset payment fails when the recipient has no trustline.
+network: testnet
+accounts:
+  - id: issuer
+    generate: true
+    fund: true
+  - id: recipient
+    generate: true
+    fund: true
+assets:
+  - id: xlm
+    type: native
+  - id: test-usd
+    type: issued
+    code: TESTUSD
+    issuer: issuer
+steps:
+  - id: send-testusd
+    type: payment
+    from: issuer
+    to: recipient
+    asset: test-usd
+    amount: "100"
+assertions:
+  - type: stepFailedWith
+    step: send-testusd
+    transactionCode: tx_failed
+    operationCodes:
+      - op_no_trust

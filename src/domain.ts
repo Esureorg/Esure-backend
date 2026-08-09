@@ -6,13 +6,49 @@ export interface ScenarioSummary {
   version: number;
   name: string;
   description: string;
+  contentHash: string;
 }
 
-export interface Scenario extends ScenarioSummary {
-  schemaVersion: 1;
-  network: "testnet";
-  kind: "xlm-payment" | "issued-asset-payment" | "missing-trustline";
+export interface ScenarioAccount {
+  id: string;
+  generate: true;
+  fund: boolean;
 }
+
+export type ScenarioAsset =
+  | { id: string; type: "native" }
+  | { id: string; type: "issued"; code: string; issuer: string };
+
+export type ScenarioStep =
+  | { id: string; type: "changeTrust"; account: string; asset: string; limit?: string }
+  | { id: string; type: "payment"; from: string; to: string; asset: string; amount: string };
+
+export type ScenarioAssertion =
+  | { type: "balanceEquals" | "balanceChangedBy"; account: string; asset: string; amount: string }
+  | { type: "stepSucceeded" | "transactionConfirmed"; step: string }
+  | { type: "stepFailedWith"; step: string; transactionCode: string; operationCodes: string[] }
+  | { type: "trustlineExists" | "trustlineMissing"; account: string; asset: string }
+  | { type: "accountExists"; account: string };
+
+export interface ScenarioDefinition {
+  schemaVersion: 1;
+  id: string;
+  version: number;
+  name: string;
+  description: string;
+  network: "testnet";
+  accounts: ScenarioAccount[];
+  assets: ScenarioAsset[];
+  steps: ScenarioStep[];
+  assertions: ScenarioAssertion[];
+}
+
+export interface ValidatedScenario extends ScenarioDefinition {
+  contentHash: string;
+}
+
+/** @deprecated Use ValidatedScenario. Kept for gateway adapters during Schema v1 migration. */
+export type Scenario = ValidatedScenario;
 
 export interface StepResult {
   id: string;
@@ -25,15 +61,17 @@ export interface StepResult {
   message: string;
 }
 
+export type AssertionValue = string | boolean | number | null | Record<string, unknown> | unknown[];
+
 export interface AssertionResult {
-  type: string;
+  type: ScenarioAssertion["type"];
   status: StepStatus;
-  expected?: string;
-  actual?: string;
+  expected: AssertionValue;
+  actual: AssertionValue;
   message: string;
 }
 
-export type RunErrorCategory = "stellar" | "network" | "timeout" | "capacity" | "internal";
+export type RunErrorCategory = "stellar" | "network" | "timeout" | "capacity" | "validation" | "internal";
 
 export interface RunError {
   code: string;
@@ -56,6 +94,8 @@ export interface RunReport {
   id: string;
   scenarioId: string;
   scenarioVersion: number;
+  scenarioSchemaVersion: 1;
+  scenarioContentHash: string;
   network: "testnet";
   status: RunStatus;
   createdAt: string;
@@ -72,7 +112,7 @@ export interface LedgerExecution {
 }
 
 export interface LedgerGateway {
-  execute(scenario: Scenario, options?: LedgerExecutionOptions): Promise<LedgerExecution>;
+  execute(scenario: ValidatedScenario, options?: LedgerExecutionOptions): Promise<LedgerExecution>;
 }
 
 export interface LedgerExecutionOptions {

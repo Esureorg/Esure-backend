@@ -38,9 +38,12 @@ size, and concurrency are configurable through the bounded values documented in
 - `GET /health`
 - `GET /api/v1/scenarios`
 - `GET /api/v1/scenarios/:scenarioId`
+- `POST /api/v1/scenarios/validate`
 - `POST /api/v1/runs`
+- `POST /api/v1/runs/definitions`
 - `GET /api/v1/runs/:runId`
 - `GET /api/v1/runs/:runId/report`
+- `GET /openapi.json`
 
 Start a live Testnet run:
 
@@ -53,6 +56,12 @@ curl -X POST http://localhost:3001/api/v1/runs \
 Run state is currently stored in memory and is lost when the process restarts.
 Generated Testnet secret keys are held only during execution and are never
 included in responses or reports.
+
+Bundled scenarios are declarative files in `scenarios/`. Set
+`SCENARIO_DIRECTORY` to load additional bounded JSON/YAML definitions at startup,
+or submit a definition directly to `/api/v1/runs/definitions`. Definitions are
+validated before account generation or network access. See
+`../esure-docs/SCENARIOS.md` and `/openapi.json` for Schema v1 and API details.
 
 Run the opt-in live smoke test only when real Testnet access is intended:
 
@@ -75,6 +84,8 @@ tests remain deterministic and make no external network calls.
 
 ## Safety
 
-The MVP accepts only bundled scenarios and is locked to Stellar Testnet. It
-does not accept secret keys, arbitrary transaction envelopes, URLs, or code in
-API requests.
+The runner is locked to Stellar Testnet. Scenario Schema v1 accepts only
+generated accounts, native/issued assets, `changeTrust`, and `payment`. It
+rejects secret seeds, arbitrary transaction envelopes, URLs, scripts, raw XDR,
+unknown properties, unresolved references, and definitions above its resource
+budgets.

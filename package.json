@@ -8,16 +8,19 @@
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "generate:api-types": "node scripts/generate-api-types.mjs",
+    "build": "npm run generate:api-types && tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "npm run generate:api-types && tsc --noEmit",
     "check": "npm run typecheck && npm test"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^16.2.0",
-    "fastify": "^5.11.2"
+    "ajv": "^8.20.0",
+    "fastify": "^5.11.2",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -26,4 +29,3 @@
     "vitest": "^4.1.10"
   }
 }
-
