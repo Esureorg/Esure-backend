@@ -69,6 +69,12 @@ export function buildApp(options: BuildAppOptions): FastifyInstance {
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof RunCapacityError) return reply.code(503).send({ error: { ...error.report, requestId: request.id, details: [] } });
     if (error instanceof ScenarioValidationError) return reply.code(400).send(apiError("INVALID_SCENARIO", error.message, request.id, error.issues));
+    if (isInvalidJsonBodyError(error)) {
+      if (isScenarioDefinitionPath(request.url)) {
+        return reply.code(400).send(apiError("INVALID_SCENARIO", "Scenario definition is invalid.", request.id, ["definition is not valid JSON"]));
+      }
+      return reply.code(400).send(apiError("INVALID_REQUEST", "The request body is invalid.", request.id, ["request body is not valid JSON"]));
+    }
     if (hasStatus(error, 429)) return reply.code(429).send(apiError("RATE_LIMITED", "Request limit exceeded. Try again later.", request.id));
     if (hasStatus(error, 413)) return reply.code(413).send(apiError("INVALID_REQUEST", "The request body exceeded the allowed size.", request.id));
     if (isValidationError(error)) return reply.code(400).send(apiError("INVALID_REQUEST", "The request did not match the API schema.", request.id));
@@ -89,3 +95,13 @@ function submittedScenario(body: unknown, contentType: string | undefined): Vali
 function apiError(code: string, message: string, requestId: string, details: string[] = []) { return { error: { code, message, requestId, details: details.slice(0, 50) } }; }
 function isValidationError(error: unknown): error is { validation: unknown } { return typeof error === "object" && error !== null && "validation" in error; }
 function hasStatus(error: unknown, status: number): boolean { return typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === status; }
+function isInvalidJsonBodyError(error: unknown): boolean {
+  return typeof error === "object" && error !== null &&
+    "name" in error && error.name === "FastifyError" &&
+    "code" in error && error.code === "FST_ERR_CTP_INVALID_JSON_BODY" &&
+    "statusCode" in error && error.statusCode === 400;
+}
+function isScenarioDefinitionPath(url: string): boolean {
+  const path = url.split("?", 1)[0];
+  return path === "/api/v1/scenarios/validate" || path === "/api/v1/runs/definitions";
+}

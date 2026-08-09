@@ -85,6 +85,60 @@ describe("Esure API", () => {
     expect((await app.inject({ method: "POST", url: "/api/v1/runs/definitions", headers: { "content-type": "application/yaml" }, payload: yaml })).statusCode).toBe(202);
   });
 
+  it.each([
+    ["truncated JSON", "/api/v1/scenarios/validate", '{"private-marker":', "INVALID_SCENARIO", "Scenario definition is invalid.", "definition is not valid JSON"],
+    ["invalid JSON", "/api/v1/scenarios/validate", "{private-marker}", "INVALID_SCENARIO", "Scenario definition is invalid.", "definition is not valid JSON"],
+    ["truncated JSON", "/api/v1/runs/definitions", '{"private-marker":', "INVALID_SCENARIO", "Scenario definition is invalid.", "definition is not valid JSON"],
+    ["invalid JSON", "/api/v1/runs/definitions", "{private-marker}", "INVALID_SCENARIO", "Scenario definition is invalid.", "definition is not valid JSON"],
+    ["truncated JSON", "/api/v1/runs", '{"private-marker":', "INVALID_REQUEST", "The request body is invalid.", "request body is not valid JSON"],
+    ["invalid JSON", "/api/v1/runs", "{private-marker}", "INVALID_REQUEST", "The request body is invalid.", "request body is not valid JSON"],
+  ])("rejects %s on %s without exposing parser internals", async (_label, url, payload, code, message, detail) => {
+    const response = await createApp().inject({
+      method: "POST",
+      url,
+      headers: { "content-type": "application/json" },
+      payload,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toMatchObject({
+      code,
+      message,
+      details: [detail],
+    });
+    expect(response.body).not.toContain("private-marker");
+    expect(response.body).not.toContain("SyntaxError");
+    expect(response.body).not.toContain("FST_ERR_CTP_INVALID_JSON_BODY");
+    expect(response.body).not.toContain("Body is not valid JSON");
+  });
+
+  it.each([
+    "/api/v1/scenarios/validate",
+    "/api/v1/runs/definitions",
+  ])("rejects malformed YAML on %s as a sanitized scenario parser error", async (url) => {
+    const response = await createApp().inject({
+      method: "POST",
+      url,
+      headers: { "content-type": "application/yaml" },
+      payload: "accounts: [\n",
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toMatchObject({
+      code: "INVALID_SCENARIO",
+      message: "Scenario definition is invalid.",
+      details: ["definition is not valid YAML"],
+    });
+    expect(response.body).not.toContain("YAMLParseError");
+  });
+
+  it("keeps genuine unexpected server failures on the sanitized 500 path", async () => {
+    const app = createApp();
+    app.get("/test-only-internal-failure", async () => { throw new Error("private implementation detail"); });
+    const response = await app.inject({ method: "GET", url: "/test-only-internal-failure" });
+    expect(response.statusCode).toBe(500);
+    expect(response.json().error).toMatchObject({ code: "INTERNAL_ERROR", message: "The request could not be completed." });
+    expect(response.body).not.toContain("private implementation detail");
+  });
+
   it("returns bounded validation details for malicious inline scenarios", async () => {
     const definition = completeScenario() as any;
     definition.network = "mainnet";
