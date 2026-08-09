@@ -111,10 +111,13 @@ describe("Esure API", () => {
     expect(response.body).not.toContain("Body is not valid JSON");
   });
 
-  it("rejects malformed YAML as a sanitized scenario parser error", async () => {
+  it.each([
+    "/api/v1/scenarios/validate",
+    "/api/v1/runs/definitions",
+  ])("rejects malformed YAML on %s as a sanitized scenario parser error", async (url) => {
     const response = await createApp().inject({
       method: "POST",
-      url: "/api/v1/scenarios/validate",
+      url,
       headers: { "content-type": "application/yaml" },
       payload: "accounts: [\n",
     });
