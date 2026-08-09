@@ -20,13 +20,29 @@ export interface StepResult {
   status: StepStatus;
   transactionHash?: string;
   ledger?: number;
+  stellarTransactionCode?: string;
+  stellarOperationCodes?: string[];
   message: string;
 }
 
 export interface AssertionResult {
   type: string;
   status: StepStatus;
+  expected?: string;
+  actual?: string;
   message: string;
+}
+
+export type RunErrorCategory = "stellar" | "network" | "timeout" | "capacity" | "internal";
+
+export interface RunError {
+  code: string;
+  message: string;
+  category: RunErrorCategory;
+  retryable: boolean;
+  failedStepId?: string;
+  stellarTransactionCode?: string;
+  stellarOperationCodes?: string[];
 }
 
 export interface RunSummary {
@@ -47,7 +63,7 @@ export interface RunReport {
   steps: StepResult[];
   assertions: AssertionResult[];
   summary: RunSummary;
-  error?: { code: string; message: string };
+  error?: RunError;
 }
 
 export interface LedgerExecution {
@@ -56,6 +72,12 @@ export interface LedgerExecution {
 }
 
 export interface LedgerGateway {
-  execute(scenario: Scenario): Promise<LedgerExecution>;
+  execute(scenario: Scenario, options?: LedgerExecutionOptions): Promise<LedgerExecution>;
 }
 
+export interface LedgerExecutionOptions {
+  signal?: AbortSignal;
+  stepTimeoutMs?: number;
+  onStep?: (step: StepResult) => void;
+  onAssertion?: (assertion: AssertionResult) => void;
+}

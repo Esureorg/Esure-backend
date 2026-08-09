@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { LedgerGateway, RunReport, RunSummary, Scenario } from "./domain.js";
+import type { LedgerGateway, RunError, RunReport, RunSummary, Scenario } from "./domain.js";
 import type { RunStore } from "./run-store.js";
+import { RunCapacityError, RunTimeoutError, SafeRunError, withTimeout } from "./errors.js";
 
 const emptySummary = (): RunSummary => ({
   stepsPassed: 0,
@@ -10,12 +11,16 @@ const emptySummary = (): RunSummary => ({
 });
 
 export class RunService {
+  #activeRuns = 0;
+
   constructor(
     private readonly store: RunStore,
     private readonly ledger: LedgerGateway,
+    private readonly options: { maxConcurrentRuns: number; runTimeoutMs: number; stepTimeoutMs: number },
   ) {}
 
   start(scenario: Scenario): RunReport {
+    if (this.#activeRuns >= this.options.maxConcurrentRuns) throw new RunCapacityError();
     const run: RunReport = {
       id: randomUUID(),
       scenarioId: scenario.id,
@@ -28,6 +33,7 @@ export class RunService {
       summary: emptySummary(),
     };
     this.store.create(run);
+    this.#activeRuns += 1;
     setImmediate(() => void this.execute(run.id, scenario));
     return run;
   }
@@ -37,10 +43,32 @@ export class RunService {
   }
 
   async execute(id: string, scenario: Scenario): Promise<void> {
+    const controller = new AbortController();
     this.store.update(id, { status: "validating" });
     try {
       this.store.update(id, { status: "running" });
-      const result = await this.ledger.execute(scenario);
+      const execution = this.ledger.execute(scenario, {
+        signal: controller.signal,
+        stepTimeoutMs: this.options.stepTimeoutMs,
+        onStep: (step) => {
+          const current = this.store.get(id);
+          if (!current) return;
+          const steps = [...current.steps, step];
+          this.store.update(id, { steps, summary: summarize(steps, current.assertions) });
+        },
+        onAssertion: (assertion) => {
+          const current = this.store.get(id);
+          if (!current) return;
+          const assertions = [...current.assertions, assertion];
+          this.store.update(id, { assertions, summary: summarize(current.steps, assertions) });
+        },
+      });
+      const result = await withTimeout(
+        execution,
+        this.options.runTimeoutMs,
+        () => new RunTimeoutError(this.options.runTimeoutMs),
+        () => controller.abort(),
+      );
       const summary = summarize(result.steps, result.assertions);
       const passed = summary.stepsFailed === 0 && summary.assertionsFailed === 0;
       this.store.update(id, {
@@ -49,14 +77,30 @@ export class RunService {
         steps: result.steps,
         assertions: result.assertions,
         summary,
-        ...(!passed && { error: { code: "ASSERTION_FAILED", message: "One or more checks failed." } }),
+        ...(!passed && {
+          error: {
+            code: "ASSERTION_FAILED",
+            message: "One or more checks failed.",
+            category: "stellar" as const,
+            retryable: false,
+          },
+        }),
       });
     } catch (error) {
+      const current = this.store.get(id);
+      const steps = current?.steps ?? [];
+      const assertions = current?.assertions ?? [];
       this.store.update(id, {
         status: "failed",
         completedAt: new Date().toISOString(),
+        steps,
+        assertions,
+        summary: summarize(steps, assertions),
         error: normalizeError(error),
       });
+    } finally {
+      controller.abort();
+      this.#activeRuns = Math.max(0, this.#activeRuns - 1);
     }
   }
 }
@@ -70,11 +114,12 @@ function summarize(steps: RunReport["steps"], assertions: RunReport["assertions"
   };
 }
 
-function normalizeError(error: unknown): { code: string; message: string } {
-  const message = error instanceof Error ? error.message : "The scenario run failed unexpectedly.";
-  const safeMessage = /S[A-Z2-7]{55}/.test(message)
-    ? "The scenario run failed. Sensitive details were removed."
-    : message.slice(0, 300);
-  return { code: "TRANSACTION_FAILED", message: safeMessage };
+function normalizeError(error: unknown): RunError {
+  if (error instanceof SafeRunError) return structuredClone(error.report);
+  return {
+    code: "INTERNAL_ERROR",
+    message: "The scenario run failed unexpectedly. Sensitive internal details were removed.",
+    category: "internal",
+    retryable: false,
+  };
 }
-
